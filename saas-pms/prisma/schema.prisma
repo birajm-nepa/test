@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id             String          @id @default(uuid())
+  name           String
+  ddaLicenseNo   String?
+  panVatNo       String?
+  address        String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  users          User[]
+  medicines      Medicine[]
+  stockBatches   StockBatch[]
+  invoices       Invoice[]
+  tenantSettings TenantSettings?
+}
+
+model TenantSettings {
+  id            String   @id @default(uuid())
+  tenantId      String   @unique
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  lastInvoiceNo Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model User {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  email     String   @unique
+  role      Role     @default(STAFF)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+model Medicine {
+  id           String        @id @default(uuid())
+  tenantId     String
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  name         String
+  composition  String?
+  category     DdaCategory
+  unitType     UnitType
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  stockBatches StockBatch[]
+  invoiceItems InvoiceItem[]
+}
+
+enum DdaCategory {
+  CLASS_A
+  CLASS_B
+  CLASS_C
+}
+
+enum UnitType {
+  TABLET
+  STRIP
+  VIAL
+  BOTTLE
+  TUBE
+}
+
+model StockBatch {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  medicineId   String
+  medicine     Medicine @relation(fields: [medicineId], references: [id])
+  batchNumber  String
+  mfgDate      DateTime
+  expDate      DateTime
+  costPrice    Decimal
+  sellingPrice Decimal
+  quantity     Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Invoice {
+  id               String        @id @default(uuid())
+  tenantId         String
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  invoiceNumber    String
+  customerName     String?
+  customerPhone    String?
+  paymentStatus    PaymentStatus @default(PAID)
+  nonTaxableAmount Decimal
+  taxableAmount    Decimal
+  vatAmount        Decimal
+  discountAmount   Decimal       @default(0)
+  grandTotal       Decimal
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  items            InvoiceItem[]
+  narcoticLog      NarcoticLog?
+}
+
+enum PaymentStatus {
+  PAID
+  CREDIT
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id])
+  medicineId  String
+  medicine    Medicine @relation(fields: [medicineId], references: [id])
+  quantity    Int
+  unitPrice   Decimal
+  isVatable   Boolean  @default(false)
+  totalAmount Decimal
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model NarcoticLog {
+  id           String   @id @default(uuid())
+  invoiceId    String   @unique
+  invoice      Invoice  @relation(fields: [invoiceId], references: [id])
+  patientPhone String
+  doctorNmcNo  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
