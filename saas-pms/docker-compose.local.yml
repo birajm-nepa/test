@@ -23,7 +23,7 @@ services:
       - "3000:3000"
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/saaspms?schema=public
-      - NEXTAUTH_SECRET=super_secret_for_local_dev_only
+      - NEXTAUTH_SECRET=a_very_long_and_secure_random_string_for_nextauth_123
       - NEXTAUTH_URL=http://localhost:3000
     depends_on:
       - db
