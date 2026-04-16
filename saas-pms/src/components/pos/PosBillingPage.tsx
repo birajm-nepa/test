@@ -79,7 +79,7 @@ export function PosBillingPage({ tenantId, medicines, availableBatches }: PosBil
       items: data.items.map(item => ({
         medicineId: item.medicineId, batchId: item.batchId,
         quantity: item.quantity,
-        unitPrice: item.unitPrice as any, // Passed to server to convert to Prisma Decimal
+         // Passed to server to convert to Prisma Decimal
         isVatable: item.isVatable,
       }))
     }

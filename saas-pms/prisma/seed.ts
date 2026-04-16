@@ -1,10 +1,21 @@
 import { PrismaClient, DdaCategory, UnitType } from '@prisma/client'
 import { Decimal } from '@prisma/client/runtime/library'
+import * as bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
 async function main() {
   console.log('Seeding initial data...')
+
+  // Clean existing data for idempotency
+  await prisma.narcoticLog.deleteMany()
+  await prisma.invoiceItem.deleteMany()
+  await prisma.invoice.deleteMany()
+  await prisma.stockBatch.deleteMany()
+  await prisma.medicine.deleteMany()
+  await prisma.user.deleteMany()
+  await prisma.tenantSettings.deleteMany()
+  await prisma.tenant.deleteMany()
 
   // Create a default tenant
   const tenant = await prisma.tenant.create({
@@ -23,17 +34,20 @@ async function main() {
 
   console.log(`Created Tenant: ${tenant.name} (${tenant.id})`)
 
-  // Create an admin user
+  // Create an admin user with hashed password
+  const hashedPassword = await bcrypt.hash('admin123', 10)
+
   const admin = await prisma.user.create({
     data: {
       tenantId: tenant.id,
       name: 'Admin User',
-      email: 'admin@everestpharmacy.com',
+      email: 'admin@everest.com',
+      password: hashedPassword,
       role: 'ADMIN',
     },
   })
 
-  console.log(`Created Admin User: ${admin.email}`)
+  console.log(`Created Admin User: ${admin.email} (Password: admin123)`)
 
   // Create Medicines
   const paracetamol = await prisma.medicine.create({

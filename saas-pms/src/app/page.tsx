@@ -1,7 +1,11 @@
 import Link from 'next/link'
-import { Activity, ShieldCheck, Calculator, ArrowRight, LayoutDashboard } from 'lucide-react'
+import { Activity, ShieldCheck, Calculator, ArrowRight, LayoutDashboard, LogIn } from 'lucide-react'
+import { getServerSession } from 'next-auth'
+import { authOptions } from './api/auth/[...nextauth]/route'
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const session = await getServerSession(authOptions)
+
   return (
     <div className="min-h-screen bg-white">
       {/* Navigation */}
@@ -11,10 +15,17 @@ export default function LandingPage() {
           <span className="text-xl font-bold text-gray-900">SaaS-PMS Nepal</span>
         </div>
         <div>
-          <Link href="/pos" className="flex items-center space-x-2 text-indigo-600 font-medium hover:text-indigo-800 transition-colors">
-            <LayoutDashboard className="h-5 w-5" />
-            <span>Launch POS Terminal</span>
-          </Link>
+          {session ? (
+            <Link href="/pos" className="flex items-center space-x-2 text-indigo-600 font-medium hover:text-indigo-800 transition-colors">
+              <LayoutDashboard className="h-5 w-5" />
+              <span>Go to Dashboard</span>
+            </Link>
+          ) : (
+            <Link href="/login" className="flex items-center space-x-2 text-gray-600 font-medium hover:text-gray-900 transition-colors">
+              <LogIn className="h-5 w-5" />
+              <span>Sign In</span>
+            </Link>
+          )}
         </div>
       </nav>
 
@@ -29,8 +40,8 @@ export default function LandingPage() {
           Built with Next.js 15, Prisma, and PostgreSQL. Features built-in FEFO logic, automated VAT calculations, and DDA narcotic compliance.
         </p>
         <div className="flex justify-center space-x-4">
-          <Link href="/pos" className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-full font-semibold flex items-center transition-colors shadow-lg shadow-indigo-200">
-            View Live POS Demo <ArrowRight className="ml-2 h-5 w-5" />
+          <Link href={session ? "/pos" : "/login"} className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-full font-semibold flex items-center transition-colors shadow-lg shadow-indigo-200">
+            {session ? 'Launch POS Terminal' : 'Get Started'} <ArrowRight className="ml-2 h-5 w-5" />
           </Link>
           <a href="#features" className="bg-gray-50 hover:bg-gray-100 text-gray-900 border border-gray-200 px-8 py-4 rounded-full font-semibold transition-colors">
             Explore Features

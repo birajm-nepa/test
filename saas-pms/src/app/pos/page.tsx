@@ -1,42 +1,70 @@
 import { PosBillingPage } from '@/components/pos/PosBillingPage'
+import { PrismaClient } from '@prisma/client'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '../api/auth/[...nextauth]/route'
+import { redirect } from 'next/navigation'
+import PosHeader from '@/components/pos/PosHeader'
 
-// Mock Data for Build process to pass (Since DB is down during build)
-const MOCK_TENANT = {
-  id: 'tenant-123',
-  name: 'Everest Pharmacy',
-  ddaLicenseNo: 'DDA-12345',
-  panVatNo: '100200300',
-}
+const prisma = new PrismaClient()
 
-const MOCK_MEDICINES = [
-  { id: 'med-1', name: 'Niko (Paracetamol 500mg)', category: 'CLASS_C' },
-  { id: 'med-2', name: 'Morphine Sulfate (10mg/ml)', category: 'CLASS_A' },
-]
+export default async function PosTerminalPage() {
+  const session = await getServerSession(authOptions)
 
-const MOCK_BATCHES = {
-  'med-1': [
-    { id: 'batch-1', batchNumber: 'B-001', expDate: new Date('2025-01-01'), quantity: 1000, sellingPrice: '3.5' },
-  ],
-  'med-2': [
-    { id: 'batch-2', batchNumber: 'M-001', expDate: new Date('2026-01-01'), quantity: 50, sellingPrice: '200' },
-  ]
-}
+  if (!session || !session.user) {
+    redirect('/login')
+  }
 
-export default async function Home() {
-  const tenant = MOCK_TENANT
-  const availableBatches = MOCK_BATCHES
+  // Fetch actual data using the authenticated user's tenantId
+  const tenantId = session.user.tenantId
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    include: {
+      medicines: true,
+      stockBatches: {
+        where: { quantity: { gt: 0 } },
+        orderBy: { expDate: 'asc' }, // Pre-sort by FEFO
+      },
+    },
+  })
+
+  if (!tenant) {
+    return <div className="p-10 text-center text-red-600">Tenant configuration error.</div>
+  }
+
+  // Group batches by medicineId
+  const availableBatches = tenant.stockBatches.reduce((acc, batch) => {
+    if (!acc[batch.medicineId]) acc[batch.medicineId] = []
+    acc[batch.medicineId].push({
+      id: batch.id,
+      batchNumber: batch.batchNumber,
+      expDate: batch.expDate,
+      quantity: batch.quantity,
+      sellingPrice: batch.sellingPrice.toString(),
+    })
+    return acc
+  }, {} as Record<string, any[]>)
 
   return (
-    <main className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">{tenant.name} - POS Terminal</h1>
-        <p className="text-gray-600 mb-8">DDA License: {tenant.ddaLicenseNo} | PAN/VAT: {tenant.panVatNo}</p>
+    <main className="min-h-screen bg-gray-50 flex flex-col">
+      <PosHeader user={session.user} tenantName={tenant.name} />
 
-        <PosBillingPage
-          tenantId={tenant.id}
-          medicines={MOCK_MEDICINES}
-          availableBatches={availableBatches}
-        />
+      <div className="flex-1 p-8">
+        <div className="max-w-6xl mx-auto">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 mb-1">Point of Sale (POS)</h1>
+            <p className="text-gray-600">
+              DDA License: <span className="font-medium text-gray-900">{tenant.ddaLicenseNo}</span> |
+              PAN/VAT: <span className="font-medium text-gray-900">{tenant.panVatNo}</span>
+            </p>
+          </div>
+
+          <PosBillingPage
+            tenantId={tenant.id}
+            medicines={tenant.medicines}
+            availableBatches={availableBatches}
+          />
+        </div>
       </div>
     </main>
   )

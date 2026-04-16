@@ -3,6 +3,8 @@
 import { PrismaClient, PaymentStatus, DdaCategory } from '@prisma/client'
 import { Decimal } from '@prisma/client/runtime/library'
 import { calculateNepalVat } from '@/utils/vatCalculator'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '../api/auth/[...nextauth]/route'
 
 const prisma = new PrismaClient()
 
@@ -15,7 +17,6 @@ export interface CreateInvoicePayload {
     medicineId: string
     batchId: string
     quantity: number
-    unitPrice: string // Passed as string from client
     isVatable: boolean
   }[]
   doctorNmcNo?: string // Required if any item is CLASS_A (Narcotic)
@@ -23,13 +24,24 @@ export interface CreateInvoicePayload {
 
 export async function createInvoice(payload: CreateInvoicePayload) {
   try {
+    // 1. Authentication & Authorization Check
+    const session = await getServerSession(authOptions)
+    if (!session || !session.user) {
+      throw new Error('Unauthorized: You must be logged in to perform this action.')
+    }
+
     const { tenantId, customerName, customerPhone, paymentStatus, items, doctorNmcNo } = payload
+
+    // 2. Tenant Isolation Enforcement
+    if (session.user.tenantId !== tenantId) {
+      throw new Error('Forbidden: You do not have permission to create invoices for this tenant.')
+    }
 
     if (!items || items.length === 0) {
       throw new Error('Invoice must contain at least one item.')
     }
 
-    // Process all items concurrently for validation
+    // 3. Process all items securely (Fetch truth from DB, do not trust client pricing)
     const processedItems = await Promise.all(
       items.map(async (item) => {
         const medicine = await prisma.medicine.findUnique({
@@ -50,7 +62,7 @@ export async function createInvoice(payload: CreateInvoicePayload) {
           }
         }
 
-        // Validate selected batch has enough stock
+        // Validate selected batch has enough stock and fetch the AUTHORITATIVE selling price
         const batch = await prisma.stockBatch.findUnique({
           where: { id: item.batchId },
         })
@@ -63,15 +75,15 @@ export async function createInvoice(payload: CreateInvoicePayload) {
            throw new Error(`Insufficient stock for ${medicine.name} in selected batch. Available: ${batch.quantity}, Requested: ${item.quantity}.`)
         }
 
-        const decimalUnitPrice = new Decimal(item.unitPrice)
+        const authoritativePrice = batch.sellingPrice
 
         return {
           medicineId: item.medicineId,
           batchId: item.batchId,
           quantity: item.quantity,
-          unitPrice: decimalUnitPrice,
+          unitPrice: authoritativePrice, // Use DB price securely
           isVatable: item.isVatable,
-          totalAmount: decimalUnitPrice.mul(item.quantity),
+          totalAmount: authoritativePrice.mul(item.quantity),
           isNarcotic: medicine.category === DdaCategory.CLASS_A,
         }
       })
@@ -81,11 +93,17 @@ export async function createInvoice(payload: CreateInvoicePayload) {
     const hasNarcotic = processedItems.some((item) => item.isNarcotic)
 
     // Calculate VAT and Totals using instantiated Decimals
-    const vatCalculation = calculateNepalVat(processedItems)
+    const vatCalculation = calculateNepalVat(
+      processedItems.map(p => ({
+        unitPrice: p.unitPrice,
+        quantity: p.quantity,
+        isVatable: p.isVatable
+      }))
+    )
 
     // Execute Prisma Transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Generate Unique Sequential Invoice Number robustly
+      // Generate Unique Sequential Invoice Number robustly
       const tenantSettings = await tx.tenantSettings.upsert({
         where: { tenantId },
         update: { lastInvoiceNo: { increment: 1 } },
@@ -96,7 +114,7 @@ export async function createInvoice(payload: CreateInvoicePayload) {
       })
       const invoiceNumber = `INV-${tenantSettings.lastInvoiceNo.toString().padStart(6, '0')}`
 
-      // 2. Create the Invoice
+      // Create the Invoice
       const invoice = await tx.invoice.create({
         data: {
           tenantId,
@@ -120,7 +138,7 @@ export async function createInvoice(payload: CreateInvoicePayload) {
         },
       })
 
-      // 3. Create Narcotic Log if required
+      // Create Narcotic Log if required
       if (hasNarcotic && doctorNmcNo && customerPhone) {
         await tx.narcoticLog.create({
           data: {
@@ -131,7 +149,7 @@ export async function createInvoice(payload: CreateInvoicePayload) {
         })
       }
 
-      // 4. Deduct Stock Levels exactly from the selected batch
+      // Deduct Stock Levels exactly from the selected batch
       for (const item of processedItems) {
         await tx.stockBatch.update({
           where: { id: item.batchId },
