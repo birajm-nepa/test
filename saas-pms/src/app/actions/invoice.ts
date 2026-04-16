@@ -1,7 +1,6 @@
 'use server'
 
 import { PrismaClient, PaymentStatus, DdaCategory } from '@prisma/client'
-import { Decimal } from '@prisma/client/runtime/library'
 import { calculateNepalVat } from '@/utils/vatCalculator'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../api/auth/[...nextauth]/route'
@@ -41,10 +40,22 @@ export async function createInvoice(payload: CreateInvoicePayload) {
       throw new Error('Invoice must contain at least one item.')
     }
 
-    // 3. Process all items securely (Fetch truth from DB, do not trust client pricing)
-    const processedItems = await Promise.all(
-      items.map(async (item) => {
-        const medicine = await prisma.medicine.findUnique({
+    // 3. Pre-flight Validation (Data formatting without DB interaction)
+    const itemsToProcess = items.map(item => ({
+       medicineId: item.medicineId,
+       batchId: item.batchId,
+       quantity: item.quantity,
+       isVatable: item.isVatable
+    }))
+
+    // Execute Prisma Transaction (ALL checks and mutations must happen inside here)
+    const result = await prisma.$transaction(async (tx) => {
+
+      const processedItems = []
+
+      for (const item of itemsToProcess) {
+        // Validate Medicine
+        const medicine = await tx.medicine.findUnique({
           where: { id: item.medicineId },
         })
 
@@ -54,16 +65,13 @@ export async function createInvoice(payload: CreateInvoicePayload) {
 
         // Narcotic Validation
         if (medicine.category === DdaCategory.CLASS_A) {
-          if (!doctorNmcNo) {
-            throw new Error(`NMC number is required for Narcotic medicine: ${medicine.name}`)
-          }
-          if (!customerPhone) {
-            throw new Error(`Patient phone is required for Narcotic medicine: ${medicine.name}`)
+          if (!doctorNmcNo || !customerPhone) {
+            throw new Error(`NMC number and Patient phone are strictly required for Narcotic medicine: ${medicine.name}`)
           }
         }
 
-        // Validate selected batch has enough stock and fetch the AUTHORITATIVE selling price
-        const batch = await prisma.stockBatch.findUnique({
+        // Concurrency-Safe Stock Validation: Fetch latest batch inside transaction
+        const batch = await tx.stockBatch.findUnique({
           where: { id: item.batchId },
         })
 
@@ -71,13 +79,22 @@ export async function createInvoice(payload: CreateInvoicePayload) {
           throw new Error(`Batch not found for medicine: ${medicine.name}`)
         }
 
+        // TOCTOU Prevention: We verify quantity right before deducting
         if (batch.quantity < item.quantity) {
            throw new Error(`Insufficient stock for ${medicine.name} in selected batch. Available: ${batch.quantity}, Requested: ${item.quantity}.`)
         }
 
+        // Deduct Stock Levels immediately
+        await tx.stockBatch.update({
+          where: { id: item.batchId },
+          data: {
+            quantity: { decrement: item.quantity },
+          },
+        })
+
         const authoritativePrice = batch.sellingPrice
 
-        return {
+        processedItems.push({
           medicineId: item.medicineId,
           batchId: item.batchId,
           quantity: item.quantity,
@@ -85,24 +102,21 @@ export async function createInvoice(payload: CreateInvoicePayload) {
           isVatable: item.isVatable,
           totalAmount: authoritativePrice.mul(item.quantity),
           isNarcotic: medicine.category === DdaCategory.CLASS_A,
-        }
-      })
-    )
+        })
+      }
 
-    // Check if any narcotic item is present
-    const hasNarcotic = processedItems.some((item) => item.isNarcotic)
+      // Check if any narcotic item is present
+      const hasNarcotic = processedItems.some((item) => item.isNarcotic)
 
-    // Calculate VAT and Totals using instantiated Decimals
-    const vatCalculation = calculateNepalVat(
-      processedItems.map(p => ({
-        unitPrice: p.unitPrice,
-        quantity: p.quantity,
-        isVatable: p.isVatable
-      }))
-    )
+      // Calculate VAT and Totals using instantiated Decimals
+      const vatCalculation = calculateNepalVat(
+        processedItems.map(p => ({
+          unitPrice: p.unitPrice,
+          quantity: p.quantity,
+          isVatable: p.isVatable
+        }))
+      )
 
-    // Execute Prisma Transaction
-    const result = await prisma.$transaction(async (tx) => {
       // Generate Unique Sequential Invoice Number robustly
       const tenantSettings = await tx.tenantSettings.upsert({
         where: { tenantId },
@@ -145,16 +159,6 @@ export async function createInvoice(payload: CreateInvoicePayload) {
             invoiceId: invoice.id,
             patientPhone: customerPhone,
             doctorNmcNo,
-          },
-        })
-      }
-
-      // Deduct Stock Levels exactly from the selected batch
-      for (const item of processedItems) {
-        await tx.stockBatch.update({
-          where: { id: item.batchId },
-          data: {
-            quantity: { decrement: item.quantity },
           },
         })
       }
