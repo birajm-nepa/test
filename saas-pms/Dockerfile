@@ -15,6 +15,12 @@ COPY . .
 # Generate Prisma Client
 RUN npx prisma generate
 
+# Compile seed script to plain JS
+RUN node_modules/.bin/tsc prisma/seed.ts \
+    --esModuleInterop --moduleResolution node \
+    --target es2019 --module commonjs \
+    --skipLibCheck --outDir prisma/compiled
+
 # Build Next.js
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
@@ -29,10 +35,12 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy Prisma schema and engine to runtime
+# Copy Prisma schema, engine, CLI, and compiled seed to runtime
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
