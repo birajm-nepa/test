@@ -15,7 +15,7 @@ COPY . .
 # Generate Prisma Client
 RUN npx prisma generate
 
-# Compile seed script to plain JS for use in production
+# Compile seed script to plain JS
 RUN node_modules/.bin/tsc prisma/seed.ts \
     --esModuleInterop --moduleResolution node \
     --target es2019 --module commonjs \

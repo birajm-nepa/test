@@ -11,7 +11,7 @@ This project is tailored specifically for the **Nepal market**, integrating regi
 - [Features](#features)
 - [Architecture & Tech Stack](#architecture--tech-stack)
 - [One-Click Local Docker Setup (Recommended)](#one-click-local-docker-setup-recommended)
-- [Manual Setup (Development)](#manual-setup-development)
+- [Authentication & Roles](#authentication--roles)
 - [Database Schema](#database-schema)
 
 ---
@@ -48,7 +48,9 @@ This will automatically spin up PostgreSQL, run Prisma migrations, seed the mock
 
 1. **Start the environment:**
    Run the following command in the root of the repository:
+   \`\`\`bash
    docker compose -f docker-compose.local.yml up --build
+   \`\`\`
 
 2. **Wait for the build:**
    The first run will take a few minutes as it downloads the Node image, installs dependencies, and pushes the database schema.
@@ -56,31 +58,21 @@ This will automatically spin up PostgreSQL, run Prisma migrations, seed the mock
 3. **Access the application:**
    Open your browser and navigate to: [http://localhost:3000](http://localhost:3000)
 
-4. **Login Credentials:**
-   The seed script automatically provisions a test admin account.
-   - **Email:** admin@everest.com
-   - **Password:** admin123
-
 ---
 
-## 💻 Manual Setup (Development)
+## 🔐 Authentication & Roles
 
-If you prefer to run the Next.js server locally for hot-reloading development:
+The SaaS features two distinct permission levels. The `docker-compose.local.yml` seed script automatically provisions accounts for both.
 
-### 1. Install Dependencies
-Run npm install
+### 1. Global Super Admin
+**Controls the SaaS Infrastructure.** This role can access the restricted `/dashboard/superadmin` dashboard to register *new* Pharmacies (Tenants) and provision their initial Administrator accounts.
+- **Email:** `superadmin@saaspms.com`
+- **Password:** `superadmin123`
 
-### 2. Configure Environment Variables
-Copy the `.env.example` file to create your local `.env`.
-
-### 3. Start Database & Run Migrations
-Start the local PostgreSQL container, then push the schema and seed it:
-docker compose up -d
-npx prisma db push
-npx prisma db seed
-
-### 4. Start Next.js
-Start the development server using the standard npm script for dev.
+### 2. Pharmacy Admin
+**Controls a single Pharmacy.** This role operates within their isolated `tenantId`. They have access to the POS Terminal, Inventory Management, and Sales Reports.
+- **Email:** `admin@everest.com`
+- **Password:** `admin123`
 
 ---
 
