@@ -13,8 +13,6 @@ jobs:
   build-and-push:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
 
     steps:
       - name: Checkout
@@ -80,18 +78,21 @@ jobs:
             set -e
             cd ~/saas-pms
 
+            # Write .env from GitHub secrets (overwrite on every deploy)
+            {
+              echo "DOCKER_IMAGE=${{ env.IMAGE_NAME }}:latest"
+              echo "POSTGRES_USER=${{ secrets.POSTGRES_USER }}"
+              echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}"
+              echo "POSTGRES_DB=${{ secrets.POSTGRES_DB }}"
+              echo "NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}"
+              echo "NEXTAUTH_URL=${{ secrets.NEXTAUTH_URL }}"
+            } > .env
+
             # Pull latest image
             docker pull ${{ env.IMAGE_NAME }}:latest
 
-            # Set env vars and restart services
-            export DOCKER_IMAGE=${{ env.IMAGE_NAME }}:latest
-            export POSTGRES_USER=${{ secrets.POSTGRES_USER }}
-            export POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-            export POSTGRES_DB=${{ secrets.POSTGRES_DB }}
-            export NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
-            export NEXTAUTH_URL=${{ secrets.NEXTAUTH_URL }}
-
-            docker compose -f docker-compose.prod.yml up -d --no-build
+            # Start / update services using .env
+            docker compose --env-file .env -f docker-compose.prod.yml up -d --no-build
 
             # Clean up old images
             docker image prune -f
