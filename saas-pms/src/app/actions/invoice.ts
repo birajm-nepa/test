@@ -80,6 +80,7 @@ export async function createInvoice(payload: CreateInvoicePayload) {
         }
 
         // TOCTOU Prevention: We verify quantity right before deducting
+        if (batch.expDate <= new Date()) throw new Error(`Cannot sell expired batch for ${medicine.name}.`);
         if (batch.quantity < item.quantity) {
            throw new Error(`Insufficient stock for ${medicine.name} in selected batch. Available: ${batch.quantity}, Requested: ${item.quantity}.`)
         }

@@ -12,4 +12,4 @@ export default withAuth(
   }
 )
 
-export const config = { matcher: ["/pos/:path*"] }
+export const config = { matcher: ["/dashboard/pos/:path*"] }
