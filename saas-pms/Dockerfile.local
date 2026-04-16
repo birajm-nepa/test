@@ -1,0 +1,33 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install dependencies for Prisma wait logic
+RUN apk add --no-cache openssl libc6-compat
+
+# Copy package files
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy application source
+COPY . .
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Create an entrypoint script to handle DB migrations and seeding automatically
+RUN echo '#!/bin/sh' > /app/entrypoint.sh && \
+    echo 'echo "Waiting for database to be ready..."' >> /app/entrypoint.sh && \
+    echo 'sleep 5' >> /app/entrypoint.sh && \
+    echo 'echo "Pushing database schema..."' >> /app/entrypoint.sh && \
+    echo 'npx prisma db push --accept-data-loss' >> /app/entrypoint.sh && \
+    echo 'echo "Seeding database..."' >> /app/entrypoint.sh && \
+    echo 'npx prisma db seed' >> /app/entrypoint.sh && \
+    echo 'echo "Starting Next.js development server..."' >> /app/entrypoint.sh && \
+    echo 'npm run dev' >> /app/entrypoint.sh
+
+RUN chmod +x /app/entrypoint.sh
+
+EXPOSE 3000
+
+CMD ["/app/entrypoint.sh"]

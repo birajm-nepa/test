@@ -10,35 +10,77 @@ This project is tailored specifically for the **Nepal market**, integrating regi
 
 - [Features](#features)
 - [Architecture & Tech Stack](#architecture--tech-stack)
+- [One-Click Local Docker Setup (Recommended)](#one-click-local-docker-setup-recommended)
+- [Manual Setup (Development)](#manual-setup-development)
 - [Database Schema](#database-schema)
-- [Core Logic Implementations](#core-logic-implementations)
-- [Local Setup & Installation](#local-setup--installation)
 
 ---
 
 ## ✨ Features
 
-- **Multi-Tenant Architecture:** Built-in column-level multi-tenancy. Every core model tracks a `tenantId`, isolating data between different pharmacy branches or clients.
-- **Strict Validation:** End-to-end type safety using TypeScript, `zod` for payload validation, and `react-hook-form` for UI state.
-- **Smart POS UI:** A highly responsive Point of Sale terminal. It automatically flags inventory batches expiring within 6 months to minimize loss.
+- **Multi-Tenant Architecture:** Built-in column-level multi-tenancy. Every core model tracks a `tenantId`.
+- **Authentication:** Protected routes and APIs using NextAuth.js (Credentials + Bcrypt).
+- **Strict Validation:** End-to-end type safety using TypeScript, `zod` for payload validation, and `react-hook-form`.
+- **Smart POS UI:** A highly responsive Point of Sale terminal. Flags inventory batches expiring within 6 months.
 - **FEFO Inventory Allocation:** Enforces First-Expire-First-Out logic for drug batches.
-- **Narcotic Compliance (Class A):** The API dynamically tracks and enforces the logging of Doctor NMC Numbers and Patient Phone Numbers before a narcotic invoice is permitted to generate.
-- **Nepal VAT Calculator:** Automatically breaks down invoices into Taxable, Non-Taxable, and exact 13% VAT totals using Prisma's `Decimal` type to eliminate floating-point/NPR rounding errors.
+- **Narcotic Compliance (Class A):** Enforces Doctor NMC Numbers and Patient Phone Numbers before a narcotic invoice is permitted.
+- **Nepal VAT Calculator:** Breaks down invoices into Taxable, Non-Taxable, and 13% VAT totals using Prisma's `Decimal` type to prevent rounding errors.
 
 ---
 
 ## 🏗 Architecture & Tech Stack
 
-- **Framework:** Next.js 15 (App Router / React Server Components)
-- **Database:** PostgreSQL (via Docker Compose)
+- **Framework:** Next.js 15 (App Router)
+- **Database:** PostgreSQL
 - **ORM:** Prisma v5
-- **Styling:** Tailwind CSS + Lucide React (Icons)
-- **Date Utility:** `nepali-date-converter` (A.D. to B.S. conversion support)
+- **Auth:** NextAuth.js
+- **Styling:** Tailwind CSS + Lucide React
 
-The application separates concerns between:
-1. **Server Actions (`/src/app/actions`)**: Secure, atomic business logic handling mutations.
-2. **Utilities (`/src/utils`)**: Pure functions for VAT calculation, Date conversions, and sorting logic.
-3. **UI Components (`/src/components`)**: Client-side interactive elements.
+---
+
+## 🐳 One-Click Local Docker Setup (Recommended)
+
+If you just want to test the application instantly without installing Node.js locally, you can use the all-in-one local Docker Compose environment.
+
+This will automatically spin up PostgreSQL, run Prisma migrations, seed the mock data, and start the Next.js app.
+
+### Instructions
+
+1. **Start the environment:**
+   Run the following command in the root of the repository:
+   docker compose -f docker-compose.local.yml up --build
+
+2. **Wait for the build:**
+   The first run will take a few minutes as it downloads the Node image, installs dependencies, and pushes the database schema.
+
+3. **Access the application:**
+   Open your browser and navigate to: [http://localhost:3000](http://localhost:3000)
+
+4. **Login Credentials:**
+   The seed script automatically provisions a test admin account.
+   - **Email:** admin@everest.com
+   - **Password:** admin123
+
+---
+
+## 💻 Manual Setup (Development)
+
+If you prefer to run the Next.js server locally for hot-reloading development:
+
+### 1. Install Dependencies
+Run npm install
+
+### 2. Configure Environment Variables
+Copy the `.env.example` file to create your local `.env`.
+
+### 3. Start Database & Run Migrations
+Start the local PostgreSQL container, then push the schema and seed it:
+docker compose up -d
+npx prisma db push
+npx prisma db seed
+
+### 4. Start Next.js
+Start the development server using the standard npm script for dev.
 
 ---
 
@@ -48,52 +90,8 @@ The database utilizes Prisma to model complex relationships securely.
 
 Key models include:
 - `Tenant`: Represents a single pharmacy entity.
-- `TenantSettings`: Tracks sequences such as the `lastInvoiceNo` generated for a specific tenant.
+- `User`: Authenticated users assigned to a specific Tenant.
 - `Medicine`: Stores global drug metadata and DDA Class category.
 - `StockBatch`: Represents a physical delivery of medicine with explicit `mfgDate`, `expDate`, and prices.
 - `Invoice` & `InvoiceItem`: Records transactions natively supporting VAT toggles and Credit states.
 - `NarcoticLog`: Automatically generated when an invoice contains a `CLASS_A` drug.
-
-*Refer to `prisma/schema.prisma` for the exact schema definitions.*
-
----
-
-## 🧠 Core Logic Implementations
-
-### 1. Atomic Invoicing (`createInvoice` Server Action)
-Located in `src/app/actions/invoice.ts`, this handles the entire checkout process in a single Prisma `$transaction`. If any step fails (e.g., stock runs out mid-transaction, or narcotic validation fails), the entire database rolls back, preventing corrupt accounting states.
-
-### 2. FEFO Logic (`getAvailableStock`)
-Located in `src/utils/fefo.ts`, this fetches available inventory for a specific medicine, filters out batches that have already expired, and orders them by nearest expiration date (`expDate: asc`).
-
-### 3. Decimal VAT Calculation
-Located in `src/utils/vatCalculator.ts`, this utility computes exact tax brackets. JavaScript's native floating-point math (`0.1 + 0.2 !== 0.3`) is dangerous for accounting. We utilize Prisma's `Decimal` type wrapper to execute precise mathematical operations for Grand Totals.
-
----
-
-## 🚀 Local Setup & Installation
-
-### Prerequisites
-- **Node.js** >= 18
-- **Docker** and **Docker Compose** (for spinning up local PostgreSQL)
-
-### 1. Install Dependencies
-Run npm install in the terminal.
-
-### 2. Configure Environment Variables
-Copy the provided `.env.example` file to create your local `.env`.
-*(The default `DATABASE_URL` connects directly to the local Docker container)*
-
-### 3. Start the Database
-Spin up the PostgreSQL database in the background:
-docker compose up -d
-
-### 4. Run Migrations & Seed Data
-Push the schema to the database and populate it with mock data (Medicines, Tenants, and Stock Batches):
-npx prisma db push
-npx prisma db seed
-
-### 5. Start the Development Server
-Start the development server with standard Next.js npm script.
-
-Open [http://localhost:3000](http://localhost:3000) to view the SaaS Landing Page. Click **"Launch POS Terminal"** to view the POS in action.
