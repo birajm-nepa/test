@@ -29,7 +29,7 @@ services:
     networks:
       - saas_network
     command: >
-      sh -c "npx prisma migrate deploy && node server.js"
+      sh -c "node node_modules/prisma/build/index.js db push && node server.js"
 
 volumes:
   pgdata_prod:
